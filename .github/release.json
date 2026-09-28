@@ -1,0 +1,20 @@
+{
+  "project": "Flint",
+  "assets": {
+    "Flint-1.0.0-macOS-arm64.dmg": "Flint-1.0.0-macOS-arm64.dmg",
+    "Flint-1.0.0-macOS-arm64.app.zip": "Flint-1.0.0-macOS-arm64.app.zip",
+    "Flint-1.0.0-macOS-x64.dmg": "Flint-1.0.0-macOS-x64.dmg",
+    "Flint-1.0.0-macOS-x64.app.zip": "Flint-1.0.0-macOS-x64.app.zip",
+    "Flint-1.0.0-Windows-x64.exe": "Flint-1.0.0-Windows-x64.exe"
+  },
+  "extras": [
+    "ffmpeg-*-source-for-*.tar.*",
+    "*-FFMPEG-BUILD.txt",
+    "WINDOWS-FFMPEG-*.txt",
+    "WRITTEN-OFFER.txt",
+    "GPL-*.txt",
+    "LGPL-*.txt",
+    "WINDOWS.md"
+  ],
+  "notes": "Flint 1.0.0. Download the package matching your operating system and processor. macOS-arm64 requires macOS 12+; macOS-x64 requires macOS 11+; x64 means Intel/AMD 64-bit; arm64 means ARM 64-bit. Source and SHA256SUMS.txt are included. See the README for installation, platform requirements, signing and third-party notices."
+}

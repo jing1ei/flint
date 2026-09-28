@@ -1,0 +1,57 @@
+name: Windows PC build
+
+on:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows x64 NSIS installer
+    runs-on: windows-2022
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Download and verify FFmpeg binaries and source
+        timeout-minutes: 12
+        run: ./scripts/fetch-sidecars.ps1
+      - name: Test and build Windows installer
+        run: ./Build-Windows.ps1 -SkipInstall -SkipSidecars
+      - run: cargo clippy --workspace --lib --bins --locked -- -D warnings
+      - name: Collect installer and corresponding source evidence
+        run: |
+          $out = "target/windows-artifacts"
+          New-Item -ItemType Directory -Force $out | Out-Null
+          $installers = @(Get-ChildItem "target/release/bundle/nsis/*-setup.exe")
+          if ($installers.Count -ne 1) { throw "Expected one NSIS installer." }
+          Copy-Item $installers[0].FullName "$out/Flint-1.0.0-Windows-x64.exe"
+          Copy-Item "target/windows-dependencies/*source-for-Windows*.tar.xz" $out
+          Copy-Item "src-tauri/licenses/WINDOWS-FFMPEG-*.txt" $out
+          Copy-Item "src-tauri/licenses/GPL-3.0.txt" $out
+          Copy-Item "docs/WINDOWS.md" $out
+          Get-ChildItem $out -File | Where-Object { $_.Name -ne "SHA256SUMS.txt" } | ForEach-Object {
+            "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
+          } | Set-Content "$out/Windows-SHA256SUMS.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Flint-1.0.0-Windows-x64
+          path: target/windows-artifacts/*
+          if-no-files-found: error
+          retention-days: 14

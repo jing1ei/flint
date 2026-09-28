@@ -1,0 +1,2467 @@
+/* Flint: light pink-blue glass, with opaque text and restrained motion. */
+:root {
+  color-scheme: light;
+  --titlebar-h: 38px;
+  --gutter: 26px;
+  --radius: 6px;
+  --bg: #f7f5fb;
+  --bg-2: #edf6ff;
+  --ink: #17161a;
+  --ink-1: rgba(23, 22, 26, 0.9);
+  --ink-2: rgba(23, 22, 26, 0.58);
+  --ink-3: rgba(23, 22, 26, 0.34);
+  --ink-4: rgba(23, 22, 26, 0.2);
+  --ink-control: rgba(23, 22, 26, 0.68);
+  --ink-quiet: rgba(23, 22, 26, 0.54);
+  --hairline: rgba(43, 61, 93, 0.10);
+  --hairline-2: rgba(43, 61, 93, 0.22);
+  --wash: rgba(108, 156, 222, 0.08);
+  --surface: rgba(255, 255, 255, 0.88);
+  --scrim: rgba(50, 65, 93, 0.12);
+  --scrim-modal: rgba(50, 65, 93, 0.24);
+  --veil: rgba(239, 245, 255, 0.82);
+  --focus: rgba(58, 91, 166, 0.8);
+  --accent: #456bb2;
+  --accent-line: rgba(69, 107, 178, 0.3);
+  --accent-ink: #ffffff;
+  --danger: #a13d64;
+  --mat-line: rgba(43, 61, 93, 0.18);
+  --mat-line-hover: rgba(43, 61, 93, 0.3);
+  --mat-line-drag: rgba(69, 107, 178, 0.65);
+
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --serif: ui-serif, "New York", "Iowan Old Style", Palatino, Georgia, serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --t-fast: 240ms;
+  --t: 320ms;
+  --t-slow: 420ms;
+  --plus: 0.34;
+  --plus-hover: 0.46;
+  --plus-drag: 0.64;
+  --mat-top: 10px;
+  --mat-side: 32px;
+  --mat-bottom: 40px;
+}
+
+/* The default stays light; imported skins may provide a separate dark palette. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #f7f5fb;
+    --bg-2: #edf6ff;
+    --ink: #17161a;
+    --ink-1: rgba(23, 22, 26, 0.9);
+    --ink-2: rgba(23, 22, 26, 0.58);
+    --ink-3: rgba(23, 22, 26, 0.34);
+    --ink-4: rgba(23, 22, 26, 0.2);
+    --ink-control: rgba(23, 22, 26, 0.68);
+    --ink-quiet: rgba(23, 22, 26, 0.54);
+    --hairline: rgba(43, 61, 93, 0.10);
+    --hairline-2: rgba(43, 61, 93, 0.22);
+    --wash: rgba(108, 156, 222, 0.08);
+    --surface: rgba(255, 255, 255, 0.88);
+    --scrim: rgba(50, 65, 93, 0.12);
+    --scrim-modal: rgba(50, 65, 93, 0.24);
+    --veil: rgba(239, 245, 255, 0.82);
+    --focus: rgba(58, 91, 166, 0.8);
+    --accent: #456bb2;
+    --accent-line: rgba(69, 107, 178, 0.3);
+    --accent-ink: #ffffff;
+    --danger: #a13d64;
+    --mat-line: rgba(43, 61, 93, 0.18);
+    --mat-line-hover: rgba(43, 61, 93, 0.3);
+    --mat-line-drag: rgba(69, 107, 178, 0.65);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background-color: var(--bg);
+  background-image: radial-gradient(ellipse at 5% 12%, rgba(249, 203, 225, 0.4), transparent 65%),
+    radial-gradient(ellipse at 95% 85%, var(--bg-2), transparent 75%);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.45;
+  letter-spacing: -0.004em;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+:focus-visible {
+  outline: 1px solid var(--focus);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+/* Thin, no arrows, invisible track. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-4) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--ink-4);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-button {
+  display: none;
+}
+
+/* ------------------------------------------------------------------------------------ shell */
+
+.app {
+  position: relative;
+  display: grid;
+  grid-template-rows: var(--titlebar-h) 1fr auto;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Drag state: a 1px frame 24px from the window edge. Never a dashed border. */
+.app::after {
+  content: "";
+  position: absolute;
+  inset: 24px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--t) var(--ease);
+  z-index: 24;
+}
+
+.app[data-dragging]::after {
+  opacity: 1;
+}
+
+/* Empty, the mat is already a frame and already takes the accent: a second rectangle 8px outside it
+   would read as a double border. The drop indicator there is the mat itself. */
+.app[data-empty]::after {
+  display: none;
+}
+
+/* Leave the native traffic lights clear of the window toolbar. */
+.titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 var(--gutter) 0 78px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.titlebar__mark {
+  font-family: var(--serif);
+  font-size: 10px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.24em;
+  color: var(--ink);
+  opacity: 0.28;
+  white-space: nowrap;
+  animation: fade-in var(--t-slow) var(--ease) both;
+}
+
+.titlebar__count {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  opacity: 0.3;
+  white-space: nowrap;
+  animation: fade-in var(--t-slow) var(--ease) both;
+}
+
+.titlebar__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.titlebar__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--ink-control);
+  font: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+}
+
+.titlebar__button:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--wash);
+}
+
+.titlebar__button:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+@media (max-width: 620px) {
+  .titlebar { gap: 8px; padding-right: 16px; }
+  .titlebar__mark { font-size: 9px; letter-spacing: 0.12em; }
+  .titlebar__count { font-size: 9px; letter-spacing: 0; }
+  .titlebar__button span { display: none; }
+  .titlebar__button { padding: 0; }
+}
+
+.main {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ------------------------------------------------- the empty state: a mat and a small "+" */
+
+.dropzone {
+  position: relative;
+  flex: 1;
+  display: grid;
+  place-items: center;
+  /* The padding *is* the mat, so the figure centres on the frame rather than on <main>. */
+  padding: var(--mat-top) var(--mat-side) var(--mat-bottom);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/*
+ * The mat: one hairline rectangle inset from the window edge, which is also the focus ring and
+ * the drag indicator. Giving the frame and the "+" one shared reaction — the whole plate warming
+ * up at once — reads as a single material; animating them apart reads as two widgets.
+ */
+.dropzone__frame {
+  position: absolute;
+  inset: var(--mat-top) var(--mat-side) var(--mat-bottom);
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  color: var(--mat-line);
+  pointer-events: none;
+  transition: color var(--t) var(--ease);
+}
+
+.dropzone:hover .dropzone__frame {
+  color: var(--mat-line-hover);
+}
+
+/* No outline: at 32px inset a second rectangle would fight the mat, so the mat itself takes ink. */
+.dropzone:focus-visible {
+  outline: none;
+}
+
+.dropzone:focus-visible .dropzone__frame {
+  color: var(--focus);
+}
+
+.dropzone[data-dragging] .dropzone__frame {
+  color: var(--mat-line-drag);
+}
+
+.dropzone[data-busy] {
+  cursor: progress;
+}
+
+.dropzone__figure {
+  position: relative;
+  display: grid;
+  place-items: center;
+  /* Optical, not mathematical: a mark on the true centre of a tall plate always sits low. */
+  transform: translateY(-8px);
+}
+
+/*
+ * 36px, one pixel thick. Everything about it is a question of the line staying crisp: the box is
+ * an even number of pixels, the strokes sit on half-pixel coordinates so a 1px stroke fills one
+ * whole device pixel instead of blurring across two, and nothing scales it.
+ */
+.dropzone__plus {
+  display: block;
+  width: 36px;
+  height: 36px;
+  stroke: var(--ink);
+  stroke-width: 1;
+  stroke-linecap: butt;
+  opacity: var(--plus);
+  transition:
+    opacity var(--t-slow) var(--ease),
+    stroke var(--t) var(--ease);
+}
+
+.dropzone:hover .dropzone__plus,
+.dropzone:focus-visible .dropzone__plus {
+  /* No scale: 36px x 1.02 is half a pixel of growth — a twitch. Opacity carries the state. */
+  opacity: var(--plus-hover);
+}
+
+/* Keep the first step discoverable before hover or keyboard focus. */
+.dropzone__hint {
+  position: absolute;
+  /* Close enough to the 36px mark to belong to it; 26px was measured against a 264px one. */
+  top: calc(100% + 17px);
+  left: 50%;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.28em;
+  white-space: nowrap;
+  color: var(--ink-control);
+  opacity: 1;
+  transform: translateX(-50%) translateY(4px);
+  transition:
+    opacity var(--t) var(--ease),
+    transform var(--t) var(--ease);
+}
+
+.dropzone:hover .dropzone__hint,
+.dropzone:focus-visible .dropzone__hint {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+@media (max-width: 620px) {
+  .dropzone__hint {
+    width: calc(100vw - 80px);
+    white-space: normal;
+    text-align: center;
+    line-height: 1.8;
+  }
+}
+
+@media (hover: none) {
+  .dropzone__hint { transform: translateX(-50%); }
+}
+
+.dropzone[data-dragging] .dropzone__plus {
+  stroke: var(--accent);
+  opacity: var(--plus-drag);
+}
+
+.dropzone[data-dragging] .dropzone__hint {
+  opacity: 0;
+}
+
+/* Files are being inspected: breathe rather than jump to a list that is not there yet. */
+.dropzone[data-busy] .dropzone__plus {
+  animation: plus-breathe 2600ms var(--ease) infinite;
+}
+
+@keyframes plus-breathe {
+  0%,
+  100% {
+    opacity: calc(var(--plus) * 0.7);
+  }
+  50% {
+    opacity: calc(var(--plus) * 1.8);
+  }
+}
+
+/*
+ * The empty canvas's one sentence, said only when the bundled engine is gone.
+ *
+ * It sits in the mat's bottom margin, absolutely positioned against <main> (a sibling of the drop
+ * surface, not a child of it: a screen reader will not walk into a role="button"), so the frame and
+ * the "+" above it are composed exactly as they are on a working install — the note costs the
+ * composition nothing. It borrows the hint's micro-copy (10px, uppercase, tracked) so it reads as the window's
+ * own voice rather than as an error dialog that lost its box: no border, no fill, no accent, and
+ * nothing to click, because the fix is a reinstall and Settings carries the longer version.
+ *
+ * --ink-2 rather than the hint's 0.35 opacity: the hint is a nicety that may wait for a hover, and
+ * a warning has to be readable the moment the window opens. The trailing letter-space of the last
+ * glyph is given back as an indent so the line is optically, not mathematically, centred.
+ */
+.enginenote {
+  position: absolute;
+  right: 0;
+  bottom: 13px;
+  left: 0;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.28em;
+  text-indent: 0.28em;
+  text-align: center;
+  color: var(--ink-2);
+  pointer-events: none;
+  animation: fade-in var(--t-slow) var(--ease) both;
+}
+
+/* -------------------------------------------------------------------------------- the queue */
+
+.filelist {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  animation: rise var(--t-slow) var(--ease) both;
+}
+
+.filelist__header {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 26px;
+  padding: 2px calc(var(--gutter) + 34px) 14px var(--gutter);
+}
+
+.filelist__bulk {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  min-width: 0;
+}
+
+.filelist__bulkitem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.filelist__bulklabel {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  /* Inside the <label> that owns the picker, so this is the control's own text, not a caption. */
+  color: var(--ink-control);
+  white-space: nowrap;
+}
+
+.filelist__rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 60px;
+  padding: 11px var(--gutter);
+  border-top: 1px solid var(--hairline);
+  isolation: isolate;
+  animation: row-in var(--t) var(--ease) both;
+  transition: background var(--t-fast) var(--ease);
+}
+
+.row:hover,
+.row[data-selected] {
+  background: var(--wash);
+}
+
+.row[data-selected]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: -1px;
+  width: 1px;
+  background: var(--ink-3);
+}
+
+.row__kind {
+  flex: none;
+  width: 38px;
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.row__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.row__name {
+  font-size: 13px;
+  color: var(--ink-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row__meta {
+  font-size: 11px;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row[data-supported="false"] .row__name,
+.row[data-supported="false"] .row__kind {
+  color: var(--ink-3);
+}
+
+.row__warn {
+  color: var(--ink-3);
+}
+
+.row__right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  /* Never wraps, but does give ground: at the 720px minimum a finished row carries four controls,
+     and letting the output name shrink first keeps the *source* filename readable. */
+  flex-shrink: 1;
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+
+.row__status {
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.row__output {
+  appearance: none;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: none;
+  font: inherit;
+  font-size: 11px;
+  color: var(--ink-control);
+  cursor: pointer;
+  max-width: 210px;
+  min-width: 0;
+  flex-shrink: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 0;
+  transition:
+    color var(--t-fast) var(--ease),
+    border-color var(--t-fast) var(--ease);
+}
+
+.row__output:hover {
+  color: var(--ink);
+  border-bottom-color: var(--hairline-2);
+}
+
+.row__error {
+  font-size: 11px;
+  color: var(--danger);
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row__skipped {
+  font-size: 11px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+/* The one control a row grows when a missing helper is what stopped it: the name of the helper,
+   set like every other microlink, and never present on a row that failed for any other reason. */
+.row__fix {
+  flex: none;
+}
+
+/* Only on hover or keyboard focus: a queue at rest has no × in it at all. */
+.row__remove {
+  appearance: none;
+  border: 0;
+  background: none;
+  color: var(--ink-control);
+  font-size: 15px;
+  line-height: 1;
+  padding: 3px 2px;
+  width: 20px;
+  flex: none;
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity var(--t-fast) var(--ease),
+    color var(--t-fast) var(--ease);
+}
+
+.row:hover .row__remove,
+.row:focus-within .row__remove {
+  opacity: 1;
+}
+
+.row__remove:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+.row__remove:disabled {
+  cursor: default;
+  color: var(--ink-4);
+}
+
+/* Progress is a 1px accent line along the row's bottom edge. Never a filled block. */
+.row__progress {
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  height: 1px;
+  background: var(--accent);
+  transition: width var(--t-fast) linear;
+}
+
+/* A job with no length to measure against gets the same 1px, travelling: FFmpeg reports no
+   percentage for it, and a line drawn at 0% for a minute reads as a hang. Same treatment as an
+   install in progress (`.tool__pulse`), because it is the same statement — this is working, and
+   how far along it is cannot be known. */
+.row__pulse {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.row__pulse::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  transform: translateX(-100%);
+  animation: install-sweep 1600ms linear infinite;
+}
+
+/* ------------------------------------------------------------------------------ the pickers */
+
+.target__select,
+select.control {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background-color: transparent;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='7' height='4'%3E%3Cpath d='M0.7 0.7 3.5 3.2 6.3 0.7' fill='none' stroke='%23999' stroke-width='1'/%3E%3C/svg%3E");
+  background-position: right 10px center;
+  background-repeat: no-repeat;
+  color: var(--ink-control);
+  font: inherit;
+  font-size: 11.5px;
+  padding: 5px 26px 5px 10px;
+  cursor: pointer;
+  text-overflow: ellipsis;
+  transition:
+    color var(--t-fast) var(--ease),
+    border-color var(--t-fast) var(--ease);
+}
+
+.target__select:hover:not(:disabled),
+.target__select:focus,
+select.control:hover,
+select.control:focus {
+  color: var(--ink-1);
+  border-color: var(--hairline-2);
+}
+
+/*
+ * The row's format picker is as wide as the format it is showing — no wider. A <select> left to
+ * itself takes the width of its longest option, which parks the chevron at the far side of the
+ * column and reads as two unrelated marks; here a hidden sizer holding the *selected* label sets
+ * the box, so label and chevron stay a single object. The controls end on a common right edge (the
+ * × after them is a fixed width), so the chevrons line up down the list however ragged the labels.
+ */
+.target {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  min-width: 0;
+  /* A safety valve for the longest "— needs ffmpeg" labels: past this the select ellipsises. */
+  max-width: 188px;
+}
+
+.target__sizer {
+  display: block;
+  visibility: hidden;
+  pointer-events: none;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  /* The select's box, plus 3px of slack (its right padding is 22px): the two are laid out by
+     different code paths inside the engine and a sub-pixel shortfall is enough to ellipsise a
+     label that in fact fits. */
+  font-size: 11.5px;
+  padding: 5px 25px 5px 9px;
+  border: 1px solid transparent;
+}
+
+/* Out of flow on purpose: in flow, the select's own intrinsic width (its longest option) would
+   size the wrapper and the sizer would be pointless. */
+.target__select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  padding: 5px 22px 5px 9px;
+  background-position: right 9px center;
+  /* The UA sheet resets tracking on form controls; without this the picker is the one piece of
+     type in the window set differently from everything around it. */
+  letter-spacing: inherit;
+}
+
+.target__select:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+/* ------------------------------------------------------------------------------- action bar */
+
+.actionbar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 15px var(--gutter) 18px;
+  border-top: 1px solid var(--hairline);
+  animation: rise var(--t-slow) var(--ease) both;
+}
+
+/*
+ * Two tiers, and the boxes are declared rather than derived: a statement (the run's status) with a
+ * caption under it (the preset). Fixed row heights and a fixed leading mean the bar measures the
+ * same 75px whether it is idle, running or reporting a finished batch — the window cannot twitch
+ * when a tally appears, and it cannot lose its rhythm when a phase has nothing to say.
+ */
+.actionbar__note {
+  display: grid;
+  grid-template-rows: 18px 12px;
+  row-gap: 11px;
+  align-content: center;
+  min-width: 0;
+}
+
+.actionbar__line {
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+  min-width: 0;
+  font-size: 11.5px;
+  line-height: 18px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+/* The status text yields before the link does: at 720px a long destination path ellipsises,
+   "Open folder" stays whole. */
+.actionbar__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.actionbar__line .microlink {
+  flex: none;
+}
+
+.actionbar__preset {
+  align-self: center;
+  font-size: 10px;
+  line-height: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  color: var(--ink-quiet);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Aggregate progress: 1px across the very bottom of the window. */
+.actionbar__progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--hairline);
+}
+
+.actionbar__progressfill {
+  height: 100%;
+  background: var(--accent);
+  transition: width var(--t-fast) linear;
+}
+
+/* --------------------------------------------------------------------------------- controls */
+
+.convert-split {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: stretch;
+}
+
+.convert-split[data-options] > .pill {
+  border-radius: 999px 0 0 999px;
+  padding-right: 20px;
+}
+
+.convert-split__toggle {
+  width: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--hairline-2);
+  border-left: 0;
+  border-radius: 0 999px 999px 0;
+  color: var(--ink-1);
+  background: transparent;
+  cursor: pointer;
+}
+
+.convert-split__toggle:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.convert-split__toggle:disabled {
+  color: var(--ink-4);
+  cursor: default;
+}
+
+.convert-split__menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  z-index: 10;
+  background: var(--surface);
+  border: 1px solid var(--hairline-2);
+  border-radius: 4px;
+  padding: 4px;
+  min-width: 185px;
+}
+
+.convert-split__menu button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px;
+  background: transparent;
+  border: 0;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.convert-split__menu button:hover {
+  background: var(--wash);
+}
+
+.crop-dialog {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  width: min(540px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 24px;
+  overflow: hidden;
+  border: 1px solid var(--hairline-2);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
+.crop-dialog:not([open]) { display: none; }
+.crop-dialog::backdrop { background: var(--scrim-modal); }
+.crop-dialog + .backdrop { background: var(--scrim-modal); }
+.crop-dialog form { display: flex; flex-direction: column; max-height: calc(100vh - 82px); max-height: calc(100dvh - 82px); }
+.crop__body { overflow-y: auto; min-height: 0; }
+.crop__header, .crop__actions { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
+.crop__header, .crop__actions { flex-shrink: 0; }
+.crop__header h2 { font-size: 17px; font-weight: 500; margin: 0; letter-spacing: 0; }
+.crop__header .iconbutton { display: grid; place-items: center; }
+.crop__section { padding: 18px 0; border-bottom: 1px solid var(--hairline); }
+.crop__toggle { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.crop__fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; border: 0; padding: 0; margin: 0; }
+.crop__fields--four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.crop__field { display: flex; flex-direction: column; gap: 7px; min-width: 0; font-size: 11px; }
+.crop__field input, .crop__field select {
+  width: 100%; min-width: 0; height: 34px; border: 1px solid var(--hairline-2);
+  background: var(--bg); color: var(--ink); padding: 5px 7px; border-radius: 3px;
+  font: inherit; letter-spacing: 0;
+}
+.crop__range { display: block; margin: 10px 0 0; font-size: 11px; line-height: 1.5; color: var(--ink-control); }
+.crop__status { margin: 16px 0; min-height: 30px; font-size: 11px; line-height: 1.5; }
+.crop__status [role="alert"] { color: var(--danger); }
+.crop__actions { justify-content: flex-end; flex-wrap: wrap; padding-top: 16px; }
+.crop__actions .button { letter-spacing: 0; }
+@media (max-width: 480px) {
+  .crop__fields, .crop__fields--four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* The one primary action. A hairline pill that fills with the accent under the pointer. */
+.pill {
+  appearance: none;
+  border: 1px solid var(--hairline-2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-1);
+  font: inherit;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  padding: 10px 26px 10px 28px;
+  flex: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--t-fast) var(--ease),
+    border-color var(--t-fast) var(--ease),
+    color var(--t-fast) var(--ease);
+}
+
+.pill:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.pill:disabled {
+  color: var(--ink-4);
+  border-color: var(--hairline);
+  cursor: default;
+}
+
+/* Stopping is not an achievement: it brightens, it does not fill. */
+.pill--stop:hover:not(:disabled) {
+  background: transparent;
+  border-color: var(--ink-3);
+  color: var(--ink);
+}
+
+.microlink {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--ink-control);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--t-fast) var(--ease);
+}
+
+.microlink:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+.microlink:disabled {
+  color: var(--ink-4);
+  cursor: default;
+}
+
+.button {
+  appearance: none;
+  border: 1px solid var(--hairline-2);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink-1);
+  font: inherit;
+  font-size: 11.5px;
+  padding: 5px 12px;
+  cursor: pointer;
+  transition:
+    border-color var(--t-fast) var(--ease),
+    color var(--t-fast) var(--ease);
+}
+
+.button:hover:not(:disabled) {
+  border-color: var(--ink-3);
+  color: var(--ink);
+}
+
+.button:disabled {
+  color: var(--ink-4);
+  cursor: default;
+}
+
+.iconbutton {
+  appearance: none;
+  border: 0;
+  background: none;
+  color: var(--ink-control);
+  font-size: 16px;
+  line-height: 1;
+  padding: 4px 6px;
+  cursor: pointer;
+  transition: color var(--t-fast) var(--ease);
+}
+
+.iconbutton:hover {
+  color: var(--ink);
+}
+
+/* --------------------------------------------------------------------------- settings sheet */
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 18;
+  background: var(--scrim);
+  backdrop-filter: blur(9px) saturate(104%);
+  -webkit-backdrop-filter: blur(9px) saturate(104%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--t) var(--ease);
+}
+
+.scrim[data-open] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.drawer {
+  /* A closed translated panel must not enlarge the queue's scrollable area. */
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(380px, 92vw);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-left: 1px solid var(--hairline);
+  transform: translateX(100%);
+  opacity: 0;
+  transition:
+    transform var(--t-slow) var(--ease),
+    opacity var(--t-slow) var(--ease);
+}
+
+.drawer[data-open] {
+  transform: translateX(0);
+  opacity: 1;
+  /* The one shadow in the app, and it is barely there. */
+  box-shadow: -30px 0 60px rgba(0, 0, 0, 0.14);
+}
+
+.drawer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 46px;
+  padding: 0 14px 0 22px;
+  border-bottom: 1px solid var(--hairline);
+  flex: none;
+}
+
+.drawer__title {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 10.5px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.24em;
+  color: var(--ink-2);
+}
+
+.drawer__body {
+  flex: 1;
+  overflow: auto;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+
+.drawer__footer {
+  border-top: 1px solid var(--hairline);
+  padding: 13px 22px;
+  display: flex;
+  justify-content: flex-end;
+  flex: none;
+}
+
+.drawer__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.drawer__actions .iconbutton {
+  display: grid;
+  place-items: center;
+}
+
+.skin {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 14px;
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.45;
+  letter-spacing: 0;
+}
+
+.skin__heading,
+.skin__tools,
+.skin__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: none;
+}
+
+.skin__heading {
+  justify-content: space-between;
+}
+
+.skin__name {
+  color: var(--ink-control);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skin__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 9px;
+  border: 1px solid var(--hairline-2);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.skin__button:hover:not(:disabled) {
+  background: var(--wash);
+}
+
+.skin__button:disabled {
+  color: var(--ink-control);
+  cursor: default;
+}
+
+.skin__button svg {
+  flex: none;
+}
+
+.skin__code {
+  flex: 1;
+  min-height: 150px;
+  width: 100%;
+  padding: 10px;
+  resize: none;
+  border: 1px solid var(--hairline-2);
+  border-radius: 3px;
+  background: var(--bg-2);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  letter-spacing: 0;
+  white-space: pre;
+  overflow: auto;
+}
+
+.skin__message {
+  display: flex;
+  flex-direction: column;
+  min-height: 35px;
+  flex: none;
+  font-size: 11px;
+  color: var(--ink-control);
+  overflow-wrap: anywhere;
+}
+
+.skin__message [role="alert"] {
+  color: var(--danger);
+}
+
+/* presets ------------------------------------------------------------------------------- */
+
+.presets {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: block;
+}
+
+.presets__legend {
+  padding: 0 0 8px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  color: var(--ink-3);
+}
+
+.preset {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 2px;
+  border-top: 1px solid var(--hairline);
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease);
+}
+
+.preset:last-of-type {
+  border-bottom: 1px solid var(--hairline);
+}
+
+.preset:hover {
+  background: var(--wash);
+}
+
+.preset input {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 3px 0 0;
+  width: 11px;
+  height: 11px;
+  flex: none;
+  border: 1px solid var(--ink-4);
+  border-radius: 50%;
+  background: transparent;
+  transition:
+    background var(--t-fast) var(--ease),
+    border-color var(--t-fast) var(--ease);
+}
+
+.preset input:checked {
+  background: var(--ink);
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 2px var(--surface);
+}
+
+.preset__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.preset__label {
+  font-size: 12.5px;
+  color: var(--ink-1);
+}
+
+.preset[data-active] .preset__label {
+  color: var(--ink);
+}
+
+.preset__desc {
+  font-size: 11px;
+  color: var(--ink-2);
+  line-height: 1.45;
+}
+
+/* sections ------------------------------------------------------------------------------ */
+
+.sections {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--hairline);
+}
+
+.section {
+  border-bottom: 1px solid var(--hairline);
+}
+
+.section__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 2px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  /* A <summary>: the one piece of type in the sheet that is also the thing you click. */
+  color: var(--ink-control);
+  cursor: pointer;
+  list-style: none;
+  transition: color var(--t-fast) var(--ease);
+}
+
+.section__title:hover {
+  color: var(--ink);
+}
+
+.section__title::marker,
+.section__title::-webkit-details-marker {
+  display: none;
+}
+
+/* A 1px chevron, drawn rather than typed. */
+.section__title::before {
+  content: "";
+  width: 4px;
+  height: 4px;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform var(--t-fast) var(--ease);
+  flex: none;
+}
+
+.section[open] > .section__title::before {
+  transform: rotate(45deg);
+}
+
+.section__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 2px 2px 18px;
+  animation: fade-in var(--t) var(--ease) both;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+/*
+ * A caption under a group's controls, for the fact none of its labels can carry.
+ * Sized under .field__label so it reads as the section talking, not as another setting.
+ */
+.section__note {
+  margin: 2px 0 0;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--ink-3);
+  max-width: 46ch;
+}
+
+.field__label {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  color: var(--ink-1);
+  min-width: 0;
+}
+
+.field__hint {
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+
+.field__control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+select.control {
+  min-width: 156px;
+  border-color: var(--hairline-2);
+}
+
+.control {
+  appearance: none;
+  border: 1px solid var(--hairline-2);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink-1);
+  font: inherit;
+  font-size: 11.5px;
+  padding: 5px 8px;
+  transition: border-color var(--t-fast) var(--ease);
+}
+
+.control:hover,
+.control:focus {
+  border-color: var(--ink-3);
+}
+
+/* An off switch has to look off: a dependent field says so rather than inviting a keystroke. */
+.control:disabled {
+  color: var(--ink-4);
+  border-color: var(--hairline);
+  cursor: default;
+}
+
+.control--number {
+  width: 84px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.control--text {
+  width: 150px;
+}
+
+.control--color {
+  padding: 2px;
+  width: 40px;
+  height: 24px;
+  cursor: pointer;
+}
+
+.control--range {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  padding: 0;
+  width: 132px;
+  background: transparent;
+}
+
+.control--range::-webkit-slider-runnable-track {
+  height: 1px;
+  background: var(--hairline-2);
+}
+
+.control--range::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: var(--ink);
+  border: 0;
+}
+
+.control--range::-moz-range-track {
+  height: 1px;
+  background: var(--hairline-2);
+}
+
+.control--range::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--ink);
+}
+
+.slider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.slider__value {
+  font-size: 11px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  min-width: 24px;
+  text-align: right;
+}
+
+.numberbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.numberbox__unit {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink-3);
+  min-width: 26px;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--ink-1);
+  cursor: pointer;
+}
+
+.check input {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border: 1px solid var(--ink-4);
+  border-radius: 2px;
+  background: transparent;
+  transition:
+    background var(--t-fast) var(--ease),
+    border-color var(--t-fast) var(--ease);
+}
+
+.check input:checked {
+  background: var(--ink);
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 2px var(--surface);
+}
+
+/*
+ * A chosen path beside the button that chooses it. Two names for one shape, because the empty state
+ * of each says a different word — a folder is not chosen, a file is not chosen — and a row that
+ * holds a cookies.txt should not be reading from a class called `folderpick`.
+ */
+.folderpick,
+.filepick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 230px;
+}
+
+.folderpick__path,
+.filepick__path {
+  font-size: 10.5px;
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+}
+
+/* helper tools --------------------------------------------------------------------------- */
+
+.tools__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 4px;
+}
+
+.tools__title {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  color: var(--ink-3);
+}
+
+.tools__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tool {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 9px 2px;
+  border-top: 1px solid var(--hairline);
+  font-size: 11.5px;
+  color: var(--ink-1);
+}
+
+/* A helper that is present is one quiet line and nothing else. */
+.tool__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tool[data-available="false"] .tool__label {
+  color: var(--ink-3);
+}
+
+/* …and the one the user was sent to from a failed row is marked, once, with the accent hairline. */
+.tool[data-highlight]::before {
+  content: "";
+  position: absolute;
+  left: -9px;
+  top: 9px;
+  bottom: 9px;
+  width: 1px;
+  background: var(--accent);
+}
+
+.tool[data-highlight] .tool__label {
+  color: var(--ink);
+}
+
+.tool__state {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+/* Half a package is its own state, and it has to be visible as one: "Incomplete" uses the accent
+   between the two quiet greys of "Found" and "Missing". */
+.tool[data-presence="incomplete"] .tool__state {
+  color: var(--accent);
+}
+
+/* How much of it is here, in the same hand as the caution above the Install button: a fact about
+   the machine, not an alarm. */
+.tool__partial {
+  margin: 0;
+  padding-left: 9px;
+  border-left: 1px solid var(--accent-line);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.tool__detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 3px;
+}
+
+/* What it unlocks, in the catalog's own words: one line per sentence, never a paragraph blob. */
+.tool__unlocks {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.tool__unlock {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
+/* Said before the click, not after it: this install may want a password we cannot ask for. */
+.tool__caution {
+  margin: 0;
+  padding-left: 9px;
+  border-left: 1px solid var(--accent-line);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.tool__plain {
+  margin: 0;
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+
+.tool__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.tool__waiting {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--ink-4);
+}
+
+/* Square, not a pill: the one pill in the app is the primary action in the window. */
+.toolbutton {
+  appearance: none;
+  border: 1px solid var(--hairline-2);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink-1);
+  font: inherit;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  padding: 6px 15px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--t-fast) var(--ease),
+    border-color var(--t-fast) var(--ease),
+    color var(--t-fast) var(--ease);
+}
+
+.toolbutton:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.toolbutton:disabled {
+  color: var(--ink-4);
+  border-color: var(--hairline);
+  cursor: default;
+}
+
+/* The always-available fallback: the exact command, selectable, with a Copy next to it. */
+.tool__command {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tool__hint {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-2);
+  user-select: all;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Homebrew's own install line is far too long for one row, so that one is allowed to wrap. */
+.tool__command[data-wrap] .tool__hint,
+.tools__manager .tool__hint {
+  white-space: pre-wrap;
+  /* `anywhere` rather than `break-all`: a long URL still prefers to break at a slash or a dot, so
+     the line reads as a path rather than as chopped-up letters. */
+  overflow-wrap: anywhere;
+  word-break: normal;
+  line-height: 1.55;
+}
+
+/* An install is alive: 1px of accent travelling along the row's bottom edge, and nothing else. */
+.tool__pulse {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  overflow: hidden;
+  background: var(--accent-line);
+}
+
+.tool__pulse::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  transform: translateX(-100%);
+  animation: install-sweep 1600ms linear infinite;
+}
+
+/* installing ----------------------------------------------------------------------------- */
+
+.install {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.install__state {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.install[data-status="ok"] .install__state {
+  color: var(--ink-1);
+}
+
+.install[data-status="failed"] .install__state {
+  color: var(--danger);
+}
+
+.install__meta {
+  display: flex;
+  gap: 18px;
+}
+
+/* Low contrast, monospace, and small: proof of life, not a terminal emulator. */
+.install__log {
+  margin: 0;
+  max-height: 92px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 7px 9px;
+  border-left: 1px solid var(--hairline-2);
+  background: var(--wash);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  line-height: 1.65;
+  color: var(--ink-3);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* Homebrew itself is missing: one explanation for the whole list, and never a button. */
+.tools__manager {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 11px 0 12px;
+  border-top: 1px solid var(--hairline);
+}
+
+.tools__managertext {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.tools__note {
+  margin: 12px 0 0;
+  font-size: 10.5px;
+  color: var(--ink-3);
+  line-height: 1.5;
+}
+
+/* The missing-FFmpeg notice — inside the sheet, never on the canvas. */
+.notice {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 15px 16px;
+  border: 1px solid var(--hairline-2);
+  border-radius: var(--radius);
+  background: var(--wash);
+}
+
+.notice__text {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.notice__actions {
+  display: flex;
+  gap: 20px;
+}
+
+/* ------------------------------------------------------------------- the one modal we allow */
+
+/* Raised when a batch settles having been stopped by a helper nobody installed. A dimmed, blurred
+   window and a small card on top of it: the app speaking, quietly, in its own type. No icon, no
+   emoji, no bounce — one fade, and the same hairline everything else is drawn with. */
+.promptveil {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: var(--gutter);
+  background: var(--scrim-modal);
+  backdrop-filter: blur(9px) saturate(104%);
+  -webkit-backdrop-filter: blur(9px) saturate(104%);
+  animation: fade-in var(--t) var(--ease) both;
+}
+
+.prompt {
+  width: min(352px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  padding: 21px 22px 17px;
+  background: var(--surface);
+  border: 1px solid var(--hairline-2);
+  border-radius: var(--radius);
+}
+
+/* The only serif sentence in the app: this is the app talking, not a label. */
+.prompt__title {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.35;
+  letter-spacing: -0.008em;
+  color: var(--ink);
+}
+
+.prompt__body {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.prompt__line {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-1);
+}
+
+/* Two or more helpers: one line each, the name of the stake against the files it costs. */
+.prompt__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.prompt__item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ink-1);
+}
+
+.prompt__item:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+/* The stake gives way first: the count beside it is four characters and must never wrap. */
+.prompt__stake {
+  min-width: 0;
+}
+
+.prompt__count {
+  flex: none;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+}
+
+.prompt__note {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: var(--ink-3);
+}
+
+.prompt__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 22px;
+}
+
+/* Brass, but square: the one pill in the app is the primary action in the window itself. */
+.promptbutton {
+  appearance: none;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 11.5px;
+  padding: 6px 15px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--t-fast) var(--ease),
+    color var(--t-fast) var(--ease);
+}
+
+.promptbutton:hover {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* Nothing acceptable in the box yet. Dimmed rather than hidden: the button is what the card is for,
+   and a control that appears out of nowhere when the 26th character lands is a jump. */
+.promptbutton:disabled {
+  border-color: var(--hairline-2);
+  color: var(--ink-3);
+  cursor: default;
+}
+
+.promptbutton:disabled:hover {
+  background: transparent;
+  color: var(--ink-3);
+}
+
+/* -------------------------------------------------------------------- the paste-a-link sheet */
+
+/* The same card on the same veil as the question above — this is the app talking too — only wider,
+   because the thing it is holding is a column of URLs and a wrapped address is unreadable. */
+.links {
+  width: min(464px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding: 21px 22px 17px;
+  background: var(--surface);
+  border: 1px solid var(--hairline-2);
+  border-radius: var(--radius);
+}
+
+.links__title {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.35;
+  letter-spacing: -0.008em;
+  color: var(--ink);
+}
+
+.links__note {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+/* Monospace, because every character of a URL matters and a proportional font hides the one that
+   is wrong. Resizing is off: the card is the frame, and a dragged corner would break it. */
+.links__box {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 88px;
+  resize: none;
+  padding: 9px 10px;
+  background: transparent;
+  border: 1px solid var(--hairline-2);
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--ink);
+  transition: border-color var(--t-fast) var(--ease);
+}
+
+.links__box:focus {
+  outline: none;
+  border-color: var(--ink-3);
+}
+
+/* Tabular, so the count does not shuffle sideways as links are added a line at a time. */
+.links__count {
+  margin: 0;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+}
+
+/* The whole paste was refused (at present only "too many"). The sheet's own line, in the same
+   register as a failed row: the toast lives at the bottom of a window this card is covering. */
+.links__error {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--danger);
+}
+
+/* One entry per refused line: the line itself, then the backend's sentence about it. Scrolls
+   rather than growing, so twenty bad lines cannot push the actions off the bottom of the window. */
+.links__refusals {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-height: 168px;
+  overflow-y: auto;
+}
+
+.links__refusal {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.links__refusal:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.links__refusalline {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.links__refusalnote {
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+
+/* yt-dlp is not here. A statement plus the same trip a failed row offers, never an install. */
+.links__helper {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.links__where {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.links__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 22px;
+  padding-top: 2px;
+}
+
+/* ---------------------------------------------------------------------- the sign-in walkthrough */
+
+/* The third card on the same veil, and the widest of them: it is holding sentences rather than a
+   question, and a five-step list wrapped into a 352px column reads like fine print. */
+.signin {
+  width: min(492px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 21px 22px 17px;
+  background: var(--surface);
+  border: 1px solid var(--hairline-2);
+  border-radius: var(--radius);
+}
+
+.signin__title {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.35;
+  letter-spacing: -0.008em;
+  color: var(--ink);
+}
+
+.signin__note {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+/* Numbered, because these are steps and not bullet points: the order is the instruction. The
+   counter is drawn rather than left to the list marker so it can sit in the gutter, tabular and
+   dim, without pushing the sentence off its own left edge. Scrolls rather than growing, for the
+   reason the refusal list does — a short window must not lose the actions off the bottom. */
+.signin__steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: signin-step;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  max-height: 268px;
+  overflow-y: auto;
+}
+
+.signin__step {
+  counter-increment: signin-step;
+  position: relative;
+  padding-left: 21px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--ink-1);
+}
+
+.signin__step:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.signin__step::before {
+  content: counter(signin-step);
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: 10px;
+  line-height: 1.8;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+}
+
+/* The button that performs the step, under the sentence that describes it rather than beside it:
+   the labels are long ("Open Full Disk Access…") and a wrapped button is worse than a new line. */
+.signin__do {
+  display: block;
+  margin-top: 6px;
+}
+
+/* Why the browser the walk is about was the one picked — one clause, in the ink of a note rather
+   than of an instruction, because it is the reasoning behind the steps and not a step. */
+.signin__why {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+/* What is configured right now, so a verdict has a subject. */
+.signin__source {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The verdict, in place. Neutral by default — "checking", and the two answers that are about the
+   network rather than about the user — and only coloured where the colour means something. */
+.signin__verdict {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.signin__verdict[data-result="working"] {
+  color: var(--accent);
+}
+
+.signin__verdict[data-result="unreadable"],
+.signin__verdict[data-result="refused"] {
+  color: var(--danger);
+}
+
+.signin__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 22px;
+  padding-top: 2px;
+}
+
+/* The same check, inline in Settings → Links: the button and the way to the walkthrough, on the
+   one line the field gives them. */
+.signincheck {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* -------------------------------------------------------------------------- drag & messages */
+
+.dragveil {
+  position: absolute;
+  inset: 0;
+  z-index: 22;
+  display: grid;
+  place-items: center;
+  background: var(--veil);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  pointer-events: none;
+  animation: fade-in var(--t-fast) var(--ease) both;
+}
+
+.dragveil__label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.28em;
+  color: var(--accent);
+}
+
+.toast {
+  position: absolute;
+  left: 50%;
+  bottom: 84px;
+  z-index: 40;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  max-width: 72%;
+  width: max-content;
+  max-height: calc(100% - 120px);
+  overflow-y: auto;
+  padding: 12px 10px 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--hairline-2);
+  border-left: 1px solid var(--danger);
+  border-radius: var(--radius);
+  animation: toast-in var(--t) var(--ease) both;
+}
+
+/* The same slot without the alarm: a quiet statement of fact (a drop the file cap cut short), so
+   the danger hairline gives way to the one everything else is drawn with. */
+.toast--quiet {
+  border-left-color: var(--hairline-2);
+}
+
+.toast__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 11.5px;
+  color: var(--ink-1);
+  line-height: 1.45;
+}
+
+/* ----------------------------------------------------------------------------------- motion */
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The install's proof of life: one travelling highlight, 1px tall, on the row's bottom hairline. */
+@keyframes install-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* The toast is centred by a transform, so its keyframes own translateX; everything else is
+   animated from its own position. */
+.toast {
+  transform: translateX(-50%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --t-fast: 1ms;
+    --t: 1ms;
+    --t-slow: 1ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+/* Glass is confined to stationary panels; queue scrolling never animates blur. */
+.titlebar, .actionbar {
+  background: var(--surface);
+}
+.drawer, .links, .signin, .prompt, .crop-dialog, .toast {
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .drawer, .links, .signin, .prompt, .crop-dialog, .toast {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: var(--bg);
+  }
+}

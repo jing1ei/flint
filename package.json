@@ -1,0 +1,42 @@
+{
+  "name": "flint",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "engines": {
+    "node": "^20.0.0 || >=22.0.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "build:app": "node scripts/build-macos.mjs --bundles app",
+    "build:dmg": "node scripts/build-macos.mjs --bundles app,dmg",
+    "build:windows": "tauri build --bundles nsis",
+    "gen:catalog": "node scripts/gen-catalog.mjs",
+    "gen:formats": "cargo run -q -p convert-core --bin format-report FORMATS.md"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.4.0",
+    "@tauri-apps/plugin-dialog": "^2.2.1",
+    "dialog-polyfill": "^0.5.6",
+    "lucide-react": "^1.45.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "wicg-inert": "^3.1.3",
+    "zustand": "^5.0.3"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.4.0",
+    "@types/dialog-polyfill": "^0.5.0",
+    "@types/node": "^22.20.2",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^4.4.0",
+    "typescript": "^5.8.0",
+    "vite": "^6.3.0",
+    "vitest": "^3.2.7"
+  }
+}

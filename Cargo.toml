@@ -1,0 +1,36 @@
+[workspace]
+resolver = "2"
+members = ["crates/convert-core", "src-tauri"]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+license = "LicenseRef-Proprietary"
+authors = ["Flint"]
+# Highest `rust-version` declared anywhere in the locked dependency graph (darling, plist, time,
+# icu_*): `cargo metadata --locked` is the check. Cargo enforces it, so an older toolchain gets a
+# clear error instead of a syntax failure deep inside a dependency.
+rust-version = "1.88"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+thiserror = "2"
+
+[profile.dev]
+# Tauri's dependency tree is ~600 crates, and full debug info for all of them dominates `target/`
+# (measured here: 4.7 GB, of which 3.3 GB was `debug/deps`). `line-tables-only` keeps what a
+# backtrace actually needs - file and line for every frame - and drops the type/variable DWARF a
+# debugger would want. Tests, panics and `RUST_BACKTRACE=1` are unaffected; step-debugging a
+# dependency's internals is not, which is a trade worth making for a disk saving this large.
+debug = "line-tables-only"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
+# No `panic = "abort"`: the batch queue deliberately survives a panicking worker (it joins every
+# worker, reports the item it was holding as failed and keeps the tally honest). Aborting would
+# take the whole app - and every other running conversion - down with one bad file.

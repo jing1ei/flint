@@ -1,0 +1,107 @@
+WRITTEN OFFER FOR THE CORRESPONDING SOURCE OF THE FFmpeg BINARIES
+SHIPPED WITH FLINT
+=================================================================================
+
+Repository : __REPOSITORY_URL__
+Release    : __RELEASE_URL__
+Rendered   : __RENDERED_AT__
+
+If the three lines above still read __REPOSITORY_URL__ / __RELEASE_URL__, you are
+looking at the template as it lives in the repository, or at a copy produced by a
+local build. The release workflow fills those placeholders in for every published
+build; a local build is not a distribution to anyone but yourself, so nothing is
+owed for it.
+
+
+WHAT THIS COVERS
+----------------
+
+Flint ships two prebuilt binaries inside the application bundle,
+`ffmpeg` and `ffprobe`. They are not our work and they are not MIT: they are
+covered by the GNU General Public License. Handing you the .dmg or the .app.zip is
+redistribution of a GPL work, which obliges us to give you the licence text (it is
+in this same folder) and to make the corresponding source available to you.
+
+Which GPL version applies depends on how the binary in *your* download was
+configured, and it differs between the two architectures. The file FFMPEG-BUILD.txt
+next to this one records the exact `ffmpeg -version` output, including the full
+configure line, for the copy you have, and names the licence file that applies. Read
+that file first; everything below refers to the build it describes.
+
+Flint's own code is proprietary and is not covered by this offer. It
+runs FFmpeg as a separate process and does not link against it. Its complete source
+is public at __REPOSITORY_URL__.
+
+
+THE OFFER (GPL-2.0 section 3(b), GPL-3.0 section 6(b))
+------------------------------------------------------
+
+For at least three years from the date you received this copy of the software, and
+to any third party who possesses the object code, we will provide a complete
+machine-readable copy of the corresponding source code for the FFmpeg binaries
+distributed with it. We will provide it by download at no charge; if you would
+rather have it on physical media, we will send it for no more than our cost of
+physically performing the distribution.
+
+
+HOW TO GET THE SOURCE
+---------------------
+
+1. It is already attached to your release. Every published release carries the
+   matching upstream FFmpeg source archive next to the .dmg files, named after the
+   exact version the binaries report, e.g. `ffmpeg-<version>-source-for-<arch>.tar.xz`.
+   Release page: __RELEASE_URL__
+
+2. Ask us. Open an issue titled "GPL source request" at
+   __ISSUE_URL__
+   and paste the `ffmpeg version ...` line from FFMPEG-BUILD.txt (or from
+   Contents/Resources/licenses/FFMPEG-BUILD.txt inside the app). The
+   Flint maintainers monitor that tracker and answer source requests there;
+   that issue tracker is the contact route for this offer. If a public tracker does
+   not suit you, say so in an issue and we will arrange another channel.
+
+3. Upstream, independently of us and permanently:
+   https://ffmpeg.org/download.html          release tarballs
+   https://git.ffmpeg.org/ffmpeg.git         canonical git
+   https://github.com/FFmpeg/FFmpeg          official mirror
+
+
+WHERE THIS OFFER IS IMPERFECT, STATED PLAINLY
+---------------------------------------------
+
+We would rather tell you the limits of what we can supply than imply a completeness
+we cannot back up.
+
+* We did not compile these binaries. They are community builds: osxexperts.net for
+  Apple Silicon, evermeet.cx for Intel. The source we attach is the corresponding
+  *upstream* FFmpeg source for the version string the binary reports, taken from
+  ffmpeg.org (or, for a snapshot build, the upstream commit the version string
+  names).
+
+* If the publisher applied patches on top of that upstream tree, we do not have
+  them and we cannot give them to you. We do not claim that the attached tarball
+  compiles bit-for-bit into the binary you received. What we can give you is the
+  publisher's complete `configure` line, recorded verbatim in FFMPEG-BUILD.txt, so
+  that the build is reproducible in principle from the attached source.
+
+* GPL-2.0 section 3 also asks for "the scripts used to control compilation and
+  installation". FFmpeg is configured by that one `configure` invocation, which is
+  why we record it in full; we do not hold the publishers' own build harnesses and
+  do not pretend to.
+
+* The publishers' own pages are not a source offer we can pass on to you.
+  osxexperts.net describes its binaries as being "for educational purposes only",
+  its License link serves the Apache-2.0 licence of its build scripts rather than
+  FFmpeg's GPL, and its "source used to compile" link has pointed at an FFmpeg
+  branch much older than the binary beside it. That is exactly why this offer, the
+  attached tarball and the recorded configure line exist rather than a link to them.
+
+* If you find that the source we attached does not correspond to the binary you
+  received, that is a bug in our compliance and we want to hear about it: open an
+  issue as in (2). The fix on our side is to rebuild from a build we control, and we
+  will do that rather than leave the discrepancy standing.
+
+
+This file, the GPL texts beside it and FFMPEG-BUILD.txt are copied into
+`Flint.app/Contents/Resources/licenses/` and attached to every release,
+so the offer travels with the binary it is about.

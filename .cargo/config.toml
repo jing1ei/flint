@@ -1,0 +1,3 @@
+[env]
+# Applies to direct Cargo checks and all native dependencies, as well as Tauri builds.
+MACOSX_DEPLOYMENT_TARGET = "11.0"
