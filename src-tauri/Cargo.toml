@@ -1,0 +1,35 @@
+[package]
+name = "flint"
+description = "Flint - the desktop shell (Tauri 2) around the convert-core engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+# The binary is a five-line launcher; everything real lives in the library so that a future
+# iOS/Android target (which links a static lib instead of running a `main`) can reuse it verbatim.
+[lib]
+name = "flint_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+convert-core = { path = "../crates/convert-core" }
+# Already in the dependency graph (tauri -> tauri-utils), and the only sane way to read the
+# LaunchServices handler plist: it is Apple's binary property list format, written by the system.
+plist = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+dunce = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_Shell", "Win32_UI_Shell_Common", "Win32_UI_WindowsAndMessaging", "Win32_System_Com"] }
+
+[dev-dependencies]
+# `test` gives us Tauri's mock runtime so the IPC surface can be exercised without a display server.
+tauri = { version = "2", features = ["test"] }

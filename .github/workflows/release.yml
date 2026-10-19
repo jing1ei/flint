@@ -1,0 +1,701 @@
+name: Release
+#
+# Immutable tag releases: push `vX.Y.Z` (or run this workflow with an existing tag) and, after the
+# SAME gates CI runs on every pull request, build both macOS architectures and Windows, verify the
+# bundles, and publish the tag's GitHub Release. Releases are never moved or rewritten - fix the
+# source, bump the number, push a new tag. See docs/RELEASING.md.
+on:
+  push:
+    tags:
+      - "v[0-9]*.[0-9]*.[0-9]*"
+      - "v[0-9]*.[0-9]*.[0-9]*-*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to publish (vX.Y.Z[-pre])"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  NODE_VERSION: '22'
+
+jobs:
+  # Resolve the tag, its commit and its version; prove every version manifest already says so.
+  meta:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+      ref: ${{ steps.meta.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+          persist-credentials: false
+      - id: meta
+        run: |
+          tag="${{ inputs.tag || github.ref_name }}"
+          case "$tag" in v*) ;; *) echo "::error::tag must look like vX.Y.Z" ; exit 1 ;; esac
+          version=$(python3 scripts/release_version.py "$tag")
+          # A checked-out annotated tag reports the tag object as GITHUB_SHA; the workflow needs
+          # the commit it points at.
+          sha=$(git rev-parse HEAD)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "publishing $tag ($version) at $sha"
+
+  # The same gates CI runs on pull requests, on the exact commit the tag points at.
+  tests:
+    needs: meta
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.meta.outputs.ref }}
+
+  windows:
+    needs: [meta, tests]
+    uses: ./.github/workflows/windows.yml
+    with:
+      version: ${{ needs.meta.outputs.version }}
+
+  # One job per Mac architecture, each on its own native runner: a user who downloads the wrong
+  # one gets an app that will not launch, so both are always built and named after the machine.
+  build:
+    name: build ${{ matrix.arch_name }}
+    needs: [meta, tests]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch_label: arm64
+            arch_name: macOS Apple Silicon (arm64)
+            runner: macos-15
+            triple: aarch64-apple-darwin
+            ffmpeg_var: FFMPEG_URL_AARCH64_APPLE_DARWIN
+            ffprobe_var: FFPROBE_URL_AARCH64_APPLE_DARWIN
+          - arch_label: x64
+            arch_name: macOS Intel (x86_64)
+            runner: macos-15-intel
+            triple: x86_64-apple-darwin
+            ffmpeg_var: FFMPEG_URL_X86_64_APPLE_DARWIN
+            ffprobe_var: FFPROBE_URL_X86_64_APPLE_DARWIN
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.meta.outputs.ref }}
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.triple }}
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.triple }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: This runner really is ${{ matrix.triple }}
+        env:
+          WANT: ${{ matrix.triple }}
+        run: |
+          set -euo pipefail
+          host=$(rustc -vV | sed -n 's/^host: //p')
+          echo "runner arch: $(uname -m)   rustc host: $host   expected: $WANT"
+          if [ "$host" != "$WANT" ]; then
+            echo "::error::runner ${{ matrix.runner }} is $host, not $WANT. The FFmpeg sidecar download and the bundle name both key off this, so the build is stopped rather than shipping an app for the wrong Mac."
+            exit 1
+          fi
+
+      - run: npm ci
+      # dist/ is what tauri.conf.json's frontendDist points at.
+      - run: npm run build
+
+      # ~100 MB from community mirrors, retried. Override with repository variables if a mirror
+      # changes or an LGPL build is preferred - no secrets.
+      - name: Fetch the FFmpeg sidecars
+        env:
+          FFMPEG_URL: ${{ vars[matrix.ffmpeg_var] }}
+          FFPROBE_URL: ${{ vars[matrix.ffprobe_var] }}
+        run: |
+          set -uo pipefail
+          for attempt in 1 2 3; do
+            echo "--- attempt $attempt"
+            if ./scripts/fetch-sidecars.sh; then exit 0; fi
+            sleep 20
+          done
+          echo "::error::could not download ffmpeg/ffprobe for ${{ matrix.triple }} after 3 attempts. The defaults are pinned community builds (osxexperts.net for arm64, evermeet.cx for x86_64); if a mirror changed, set the repository variables ${{ matrix.ffmpeg_var }} and ${{ matrix.ffprobe_var }} to direct URLs and re-run."
+          exit 1
+
+      - name: Both sidecars are present, runnable and pinned
+        run: |
+          ./scripts/fetch-sidecars.sh --check
+          python3 scripts/check_macos_compat.py --arch "$(uname -m)" \
+            "src-tauri/binaries/ffmpeg-${{ matrix.triple }}" \
+            "src-tauri/binaries/ffprobe-${{ matrix.triple }}"
+
+      # -----------------------------------------------------------------------------------------
+      # Licence evidence for the GPL binaries this job is about to redistribute. Which GPL applies
+      # is read off the configure line the binary itself prints, never assumed from a table.
+      # -----------------------------------------------------------------------------------------
+      - name: Record the exact FFmpeg build we are about to ship
+        id: ffmpeg
+        env:
+          TRIPLE: ${{ matrix.triple }}
+        run: |
+          set -euo pipefail
+          ff="src-tauri/binaries/ffmpeg-$TRIPLE"
+          fp="src-tauri/binaries/ffprobe-$TRIPLE"
+          "$ff" -version > "$RUNNER_TEMP/ffmpeg-version.txt"
+          "$fp" -version > "$RUNNER_TEMP/ffprobe-version.txt"
+
+          version_line=$(head -n 1 "$RUNNER_TEMP/ffmpeg-version.txt")
+          ffver=$(printf '%s\n' "$version_line" | awk '{print $3}')
+          configure=$(sed -n 's/^ *configuration: *//p' "$RUNNER_TEMP/ffmpeg-version.txt" | head -n 1)
+
+          [ -n "$ffver" ] || { echo "::error::could not parse a version out of '$version_line'." ; exit 1; }
+          [ -n "$configure" ] || { echo "::error::this ffmpeg prints no 'configuration:' line, so its licence cannot be established. Refusing to redistribute it." ; exit 1; }
+
+          case "$configure" in
+            *--enable-nonfree*)
+              echo "::error::this ffmpeg is built --enable-nonfree and may not be redistributed at all. Point ${{ matrix.ffmpeg_var }} at a build without it."
+              exit 1 ;;
+          esac
+
+          case "$configure" in
+            *--enable-gpl*)
+              case "$configure" in
+                *--enable-version3*) licence="GPL-3.0-or-later"; licence_file="GPL-3.0.txt"
+                  reason="--enable-gpl and --enable-version3 are both present, so v3-only components are linked in" ;;
+                *) licence="GPL-2.0-or-later"; licence_file="GPL-2.0.txt"
+                  reason="--enable-gpl is present, --enable-version3 is not" ;;
+              esac ;;
+            *--enable-version3*)
+              echo "::error::this ffmpeg is LGPL-3.0-or-later and src-tauri/licenses/ carries no LGPL-3.0 text. Add one before shipping this build."
+              exit 1 ;;
+            *) licence="LGPL-2.1-or-later"; licence_file="LGPL-2.1.txt"
+              reason="neither --enable-gpl nor --enable-version3 is present, so no GPL component is linked in" ;;
+          esac
+
+          [ -s "src-tauri/licenses/$licence_file" ] || { echo "::error::the sidecar is $licence but src-tauri/licenses/$licence_file is missing or empty." ; exit 1; }
+
+          {
+            echo "version_line=$version_line"
+            echo "ffmpeg_version=$ffver"
+            echo "licence=$licence"
+            echo "licence_file=$licence_file"
+            echo "reason=$reason"
+          } >> "$GITHUB_OUTPUT"
+          echo "$version_line"
+          echo "-> $licence ($reason)"
+
+      # The source offer, made concrete: attach the matching upstream FFmpeg source tarball to the
+      # same release as the binary.
+      - name: Fetch the matching upstream FFmpeg source
+        id: ffsrc
+        env:
+          FFVER: ${{ steps.ffmpeg.outputs.ffmpeg_version }}
+          ARCH_LABEL: ${{ matrix.arch_label }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/ffmpeg-source"
+          rm -rf "$out"; mkdir -p "$out"
+
+          num=$(printf '%s' "$FFVER" | sed -n 's/^\([0-9][0-9.]*[0-9]\)\(-.*\)\{0,1\}$/\1/p')
+          commit=$(printf '%s' "$FFVER" | sed -n 's/.*-g\([0-9a-f]\{7,\}\).*/\1/p')
+
+          if [ -n "$commit" ]; then
+            candidates="https://git.ffmpeg.org/gitweb/ffmpeg.git/snapshot/$commit.tar.gz tar.gz git-$commit
+          https://github.com/FFmpeg/FFmpeg/archive/$commit.tar.gz tar.gz git-$commit"
+          elif [ -n "$num" ]; then
+            candidates="https://ffmpeg.org/releases/ffmpeg-$num.tar.xz tar.xz $num
+          https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n$num.tar.gz tar.gz $num"
+          else
+            echo "::error::cannot map the reported FFmpeg version '$FFVER' onto an upstream release or commit. A GPL binary cannot be published without corresponding source."
+            exit 1
+          fi
+
+          got=""; used=""
+          while read -r url ext label; do
+            [ -n "$url" ] || continue
+            dest="$out/ffmpeg-$label-source-for-macOS-$ARCH_LABEL.$ext"
+            echo "--- trying $url"
+            if curl --fail --location --retry 3 --retry-delay 5 --connect-timeout 20 \
+                 --max-time 600 -sS --output "$dest" "$url" \
+               && [ -s "$dest" ] && tar -tf "$dest" >/dev/null 2>&1; then
+              got="$dest"; used="$url"; break
+            fi
+            rm -f "$dest"
+          done <<EOF
+          $candidates
+          EOF
+
+          [ -n "$got" ] || { echo "::error::could not download upstream FFmpeg source for '$FFVER' from any canonical location." ; exit 1; }
+
+          if curl --fail --location --silent --max-time 60 --output "$got.asc" "$used.asc"; then
+            echo "detached signature attached: $(basename "$got").asc"
+          else
+            rm -f "$got.asc"
+          fi
+
+          {
+            echo "path=$got"
+            echo "name=$(basename "$got")"
+            echo "url=$used"
+            echo "sha256=$(shasum -a 256 "$got" | awk '{print $1}')"
+          } >> "$GITHUB_OUTPUT"
+
+      # Written before the bundle is built: bundle.resources copies src-tauri/licenses/* into
+      # Flint.app/Contents/Resources/licenses/ at build time.
+      - name: Write the licence evidence that ships inside the .app
+        id: evidence
+        env:
+          TRIPLE: ${{ matrix.triple }}
+          ARCH_LABEL: ${{ matrix.arch_label }}
+          ARCH_NAME: ${{ matrix.arch_name }}
+          TAG: ${{ needs.meta.outputs.tag }}
+          VERSION_LINE: ${{ steps.ffmpeg.outputs.version_line }}
+          FFVER: ${{ steps.ffmpeg.outputs.ffmpeg_version }}
+          LICENCE: ${{ steps.ffmpeg.outputs.licence }}
+          LICENCE_FILE: ${{ steps.ffmpeg.outputs.licence_file }}
+          REASON: ${{ steps.ffmpeg.outputs.reason }}
+          SRC_NAME: ${{ steps.ffsrc.outputs.name }}
+          SRC_URL: ${{ steps.ffsrc.outputs.url }}
+          SRC_SHA: ${{ steps.ffsrc.outputs.sha256 }}
+          FFMPEG_URL_SET: ${{ vars[matrix.ffmpeg_var] }}
+          FFPROBE_URL_SET: ${{ vars[matrix.ffprobe_var] }}
+        run: |
+          set -euo pipefail
+          lic=src-tauri/licenses
+          ff="src-tauri/binaries/ffmpeg-$TRIPLE"
+          fp="src-tauri/binaries/ffprobe-$TRIPLE"
+          ffsha=$(shasum -a 256 "$ff" | awk '{print $1}')
+          fpsha=$(shasum -a 256 "$fp" | awk '{print $1}')
+          now=$(date -u '+%Y-%m-%d %H:%M:%SZ')
+          repo_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          release_url="$repo_url/releases/tag/$TAG"
+          ffmpeg_from="${FFMPEG_URL_SET:-pinned default in scripts/fetch-sidecars.sh for this architecture}"
+          ffprobe_from="${FFPROBE_URL_SET:-pinned default in scripts/fetch-sidecars.sh for this architecture}"
+          configure=$(sed -n 's/^ *configuration: *//p' "$RUNNER_TEMP/ffmpeg-version.txt" | head -n 1)
+
+          cat > "$lic/FFMPEG-BUILD.txt" <<EOF
+          WHICH FFmpeg IS IN THIS COPY, AND WHICH LICENCE COVERS IT
+          =========================================================
+
+          Generated on the build machine at $now, from the binaries actually bundled here.
+          Nothing in this file is typed by hand; it is what the binary reported about itself.
+
+          Build          : $ARCH_NAME ($TRIPLE)
+          Artifact       : Flint-*-macOS-$ARCH_LABEL.dmg / .app.zip
+          Release        : $release_url
+
+          FFmpeg version : $FFVER
+          LICENCE        : $LICENCE
+          Licence text   : $LICENCE_FILE  <- the file next to this one that applies to you
+          Source offer   : WRITTEN-OFFER.txt (next to this one)
+
+          Corresponding source attached to that release
+            file   : $SRC_NAME
+            from   : $SRC_URL
+            sha256 : $SRC_SHA
+
+          Sidecars downloaded from
+            ffmpeg  : $ffmpeg_from
+            ffprobe : $ffprobe_from
+
+          SHA-256 of the two binaries inside this bundle
+            $ffsha  ffmpeg
+            $fpsha  ffprobe
+
+          How the licence above was decided (from the configure line below, not from a table)
+            --enable-nonfree present ................ not redistributable at all: build refused
+            --enable-gpl and --enable-version3 ...... GPL-3.0-or-later  -> GPL-3.0.txt
+            --enable-gpl, no --enable-version3 ...... GPL-2.0-or-later  -> GPL-2.0.txt
+            neither ................................. LGPL-2.1-or-later -> LGPL-2.1.txt
+          This copy: $REASON.
+
+          Flint's own code is proprietary, with all rights reserved. It runs ffmpeg as a separate process and never links against it, so the
+          GPL above covers the bundled FFmpeg binaries, not the application around them.
+
+          EOF
+
+          printf 'ffmpeg -version, verbatim\n-------------------------\n' >> "$lic/FFMPEG-BUILD.txt"
+          cat "$RUNNER_TEMP/ffmpeg-version.txt" >> "$lic/FFMPEG-BUILD.txt"
+          printf '\nffprobe -version, verbatim\n--------------------------\n' >> "$lic/FFMPEG-BUILD.txt"
+          cat "$RUNNER_TEMP/ffprobe-version.txt" >> "$lic/FFMPEG-BUILD.txt"
+
+          REPO_URL="$repo_url" RELEASE_URL="$release_url" NOW="$now" \
+            python3 - "$lic/WRITTEN-OFFER.txt" <<'PY'
+          import os, sys
+          path = sys.argv[1]
+          text = open(path, encoding="utf-8").read()
+          for key, value in {
+              "__REPOSITORY_URL__": os.environ["REPO_URL"],
+              "__RELEASE_URL__": os.environ["RELEASE_URL"],
+              "__ISSUE_URL__": os.environ["REPO_URL"] + "/issues",
+              "__RENDERED_AT__": os.environ["NOW"],
+          }.items():
+              text = text.replace(key, value)
+          open(path, "w", encoding="utf-8").write(text)
+          print(f"rendered {path}")
+          PY
+
+          CONFIGURE="$configure" FFSHA="$ffsha" FPSHA="$fpsha" \
+          FFMPEG_FROM="$ffmpeg_from" FFPROBE_FROM="$ffprobe_from" \
+            python3 - "$RUNNER_TEMP/ffmpeg-meta.json" <<'PY'
+          import json, os, sys
+          meta = {
+              "arch_label": os.environ["ARCH_LABEL"],
+              "arch_name": os.environ["ARCH_NAME"],
+              "triple": os.environ["TRIPLE"],
+              "version_line": os.environ["VERSION_LINE"],
+              "ffmpeg_version": os.environ["FFVER"],
+              "licence": os.environ["LICENCE"],
+              "licence_file": os.environ["LICENCE_FILE"],
+              "reason": os.environ["REASON"],
+              "configure": os.environ["CONFIGURE"],
+              "ffmpeg_sha256": os.environ["FFSHA"],
+              "ffprobe_sha256": os.environ["FPSHA"],
+              "ffmpeg_from": os.environ["FFMPEG_FROM"],
+              "ffprobe_from": os.environ["FFPROBE_FROM"],
+              "source_name": os.environ["SRC_NAME"],
+              "source_url": os.environ["SRC_URL"],
+              "source_sha256": os.environ["SRC_SHA"],
+          }
+          with open(sys.argv[1], "w", encoding="utf-8") as fh:
+              json.dump(meta, fh, indent=2, sort_keys=True)
+              fh.write("\n")
+          PY
+
+          ls -l "$lic"
+
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+
+      - name: Build the .app and .dmg
+        run: |
+          set -uo pipefail
+          mkdir -p "$RUNNER_TEMP/logs"
+          if npm run build:dmg 2>&1 | tee "$RUNNER_TEMP/logs/tauri-build-${{ matrix.arch_label }}.log"; then
+            exit 0
+          fi
+          echo "::group::diagnostics"
+          ls -R target/release/bundle 2>/dev/null || echo "   (no bundle directory at all)"
+          ls /Volumes || true
+          tail -n 40 "$RUNNER_TEMP/logs/tauri-build-${{ matrix.arch_label }}.log" || true
+          echo "::endgroup::"
+          if [ -d target/release/bundle/macos ]; then
+            echo "::error::the .app built but the .dmg step failed. The full log is attached as build-log-${{ matrix.arch_label }}. Nothing is published."
+          else
+            echo "::error::the Tauri build failed before producing an .app. The full log is attached as build-log-${{ matrix.arch_label }}."
+          fi
+          exit 1
+
+      - name: Verify deployment target, package minimum and architecture
+        run: |
+          set -euo pipefail
+          arch=$(uname -m)
+          app="target/release/bundle/macos/Flint.app"
+          executable=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$app/Contents/Info.plist")
+          expected=$(python3 -c 'import sys; sys.path.insert(0, "scripts"); from pathlib import Path; from check_macos_compat import minimum_for_arch; print(minimum_for_arch(Path.cwd(), sys.argv[1]))' "$arch")
+          actual=$(/usr/libexec/PlistBuddy -c "Print :LSMinimumSystemVersion" "$app/Contents/Info.plist")
+          test "$actual" = "$expected" || { echo "::error::bundle minimum $actual differs from $expected"; exit 1; }
+          python3 scripts/check_macos_compat.py --arch "$arch" \
+            "$app/Contents/MacOS/$executable" \
+            "src-tauri/binaries/ffmpeg-${{ matrix.triple }}" \
+            "src-tauri/binaries/ffprobe-${{ matrix.triple }}"
+
+      - name: The licence files really are inside the .app
+        env:
+          LICENCE_FILE: ${{ steps.ffmpeg.outputs.licence_file }}
+          LICENCE: ${{ steps.ffmpeg.outputs.licence }}
+        run: |
+          set -euo pipefail
+          app="target/release/bundle/macos/Flint.app"
+          root="$app/Contents/Resources"
+          res="$root/licenses"
+          if [ ! -d "$res" ]; then
+            if [ -f "$root/$LICENCE_FILE" ]; then res="$root"; echo "note: resources were flattened into Contents/Resources"; else
+              echo "::error::the built app has no licence resources (looked in $res and $root)."
+              ls -R "$root" 2>/dev/null | head -n 40 || true
+              exit 1
+            fi
+          fi
+          missing=0
+          for f in "$LICENCE_FILE" WRITTEN-OFFER.txt FFMPEG-BUILD.txt README.md; do
+            if [ -s "$res/$f" ]; then echo "  ok       $f ($(wc -c < "$res/$f" | tr -d ' ') bytes)"; else echo "  MISSING  $f"; missing=1; fi
+          done
+          cmp -s "src-tauri/licenses/$LICENCE_FILE" "$res/$LICENCE_FILE" || { echo "::error::$LICENCE_FILE inside the .app is not byte-identical to src-tauri/licenses/$LICENCE_FILE"; missing=1; }
+          grep -q "^LICENCE        : $LICENCE$" "$res/FFMPEG-BUILD.txt" || { echo "::error::FFMPEG-BUILD.txt inside the .app does not record $LICENCE"; missing=1; }
+          if [ "$missing" -ne 0 ]; then echo "::error::this .app ships a $LICENCE ffmpeg without the matching evidence."; exit 1; fi
+
+      - name: Collect the artifacts
+        id: collect
+        env:
+          ARCH_LABEL: ${{ matrix.arch_label }}
+          VERSION: ${{ needs.meta.outputs.version }}
+          SRC_PATH: ${{ steps.ffsrc.outputs.path }}
+        run: |
+          set -euo pipefail
+          base="Flint-${VERSION}-macOS-${ARCH_LABEL}"
+          out="$RUNNER_TEMP/artifacts"
+          rm -rf "$out"; mkdir -p "$out"
+
+          shopt -s nullglob
+          dmgs=(target/release/bundle/dmg/*.dmg)
+          if [ "${#dmgs[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one .dmg, found ${#dmgs[@]}"
+            ls -l target/release/bundle/dmg 2>/dev/null || true
+            exit 1
+          fi
+          cp "${dmgs[0]}" "$out/$base.dmg"
+
+          app="target/release/bundle/macos/Flint.app"
+          [ -d "$app" ] || { echo "::error::no .app at $app"; exit 1; }
+          ditto -c -k --keepParent "$app" "$out/$base.app.zip"
+
+          cp src-tauri/licenses/FFMPEG-BUILD.txt "$out/$base-FFMPEG-BUILD.txt"
+          cp "$SRC_PATH" "$out/"
+          [ -f "$SRC_PATH.asc" ] && cp "$SRC_PATH.asc" "$out/"
+          cp "$RUNNER_TEMP/ffmpeg-meta.json" "$out/$ARCH_LABEL.ffmpeg-meta.json"
+
+          ( cd "$out" && shasum -a 256 "$base.dmg" "$base.app.zip" > "$base.sha256" )
+          ls -lh "$out"
+          cat "$out/$base.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Flint-${{ needs.meta.outputs.version }}-macOS-${{ matrix.arch_label }}
+          path: ${{ runner.temp }}/artifacts/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Keep the build log when something failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-${{ matrix.arch_label }}
+          path: ${{ runner.temp }}/logs/*
+          if-no-files-found: warn
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------------------------
+  # Publish. The only job with write access, and it only runs when tests, Windows and both Mac
+  # builds passed. Built-in GITHUB_TOKEN through the pre-installed gh CLI: no third-party action.
+  # ---------------------------------------------------------------------------------------------
+  release:
+    name: publish the GitHub Release
+    needs: [meta, tests, windows, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.meta.outputs.ref }}
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: Flint-${{ needs.meta.outputs.version }}-*
+          merge-multiple: true
+          path: artifacts
+
+      - name: Assemble the licence evidence the release must carry
+        env:
+          TAG: ${{ needs.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p meta
+          for f in artifacts/*.ffmpeg-meta.json; do
+            [ -e "$f" ] || { echo "::error::no ffmpeg licence metadata was produced" ; exit 1; }
+            mv "$f" meta/
+          done
+          count=$(ls -1 meta/*.ffmpeg-meta.json | wc -l | tr -d ' ')
+          [ "$count" -eq 2 ] || { echo "::error::expected licence metadata from both build jobs, found $count"; exit 1; }
+
+          repo_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          release_url="$repo_url/releases/tag/$TAG"
+          now=$(date -u '+%Y-%m-%d %H:%M:%SZ')
+
+          REPO_URL="$repo_url" RELEASE_URL="$release_url" NOW="$now" python3 - <<'PY'
+          import glob, json, os, shutil
+          text = open("src-tauri/licenses/WRITTEN-OFFER.txt", encoding="utf-8").read()
+          for key, value in {
+              "__REPOSITORY_URL__": os.environ["REPO_URL"],
+              "__RELEASE_URL__": os.environ["RELEASE_URL"],
+              "__ISSUE_URL__": os.environ["REPO_URL"] + "/issues",
+              "__RENDERED_AT__": os.environ["NOW"],
+          }.items():
+              text = text.replace(key, value)
+          with open("artifacts/WRITTEN-OFFER.txt", "w", encoding="utf-8") as fh:
+              fh.write(text)
+          wanted = sorted({
+              json.load(open(p, encoding="utf-8"))["licence_file"]
+              for p in glob.glob("meta/*.ffmpeg-meta.json")
+          })
+          for name in wanted:
+              shutil.copyfile(f"src-tauri/licenses/{name}", f"artifacts/{name}")
+              print("attached", name)
+          PY
+          # Per-job manifests are validated by the publisher; one consolidated file is written in
+          # the next step.
+          rm -f artifacts/*.sha256 artifacts/Windows-SHA256SUMS.txt
+          ls -l artifacts
+
+      - name: Write the release notes
+        env:
+          TAG: ${{ needs.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          version="${{ needs.meta.outputs.version }}"
+          notes=notes.md
+          cat > "$notes" <<HEADER
+          Flint is a Mac and Windows app: drag files in, click once, get web-ready video, audio,
+          images and documents. Everything runs locally on a bundled FFmpeg - nothing is uploaded.
+
+          ## Download the right one
+
+          | Your Mac | File |
+          | --- | --- |
+          | Apple Silicon, macOS 12+ | \`...-macOS-arm64.dmg\` |
+          | Intel, macOS 11+ | \`...-macOS-x64.dmg\` |
+
+          Apple menu > About This Mac tells you which you have ("Chip" = Apple Silicon,
+          "Processor" = Intel). The other architecture's file will not launch.
+          The \`.app.zip\` files are the same app without the disk image.
+
+          Windows x64: download \`Flint-${version}-Windows-x64.exe\`.
+          There is no Linux installer.
+
+          HEADER
+
+          python3 - >> "$notes" <<'PY'
+          import glob, json, os
+
+          metas = sorted(
+              (json.load(open(p, encoding="utf-8")) for p in glob.glob("meta/*.ffmpeg-meta.json")),
+              key=lambda m: m["arch_label"],
+          )
+
+          out = []
+          out.append("## The bundled FFmpeg, and which licence covers *your* download")
+          out.append("")
+          out.append("Flint ships `ffmpeg` and `ffprobe` inside the app. They are not ours and")
+          out.append("they are not MIT: they are **GPL**, and the two architectures are under **different**")
+          out.append("GPL versions, because the two community publishers configure their builds differently.")
+          out.append("Find the file you downloaded:")
+          out.append("")
+          out.append("| Your download | FFmpeg version | Licence | Licence text | Corresponding source |")
+          out.append("| --- | --- | --- | --- | --- |")
+          for m in metas:
+              out.append(
+                  f"| `...-macOS-{m['arch_label']}.dmg` / `.app.zip` "
+                  f"| `{m['ffmpeg_version']}` "
+                  f"| **{m['licence']}** "
+                  f"| `{m['licence_file']}` "
+                  f"| `{m['source_name']}` |"
+              )
+          out.append("")
+          out.append("Every file named in that table is **attached to this release**, and the same texts ride")
+          out.append("inside the app at `Flint.app/Contents/Resources/licenses/` (right-click the")
+          out.append("app > Show Package Contents) together with `FFMPEG-BUILD.txt` and `WRITTEN-OFFER.txt`.")
+          out.append("")
+          out.append("You can ask the binary you were given:")
+          out.append("")
+          out.append("```sh")
+          out.append('"/Applications/Flint.app/Contents/MacOS/ffmpeg" -version')
+          out.append("```")
+          out.append("")
+          out.append("`--enable-version3` means GPL-3.0-or-later; `--enable-gpl` without it means GPL-2.0-or-later.")
+          out.append("")
+          for m in metas:
+              out.append(f"<details><summary>{m['arch_name']} - {m['licence']}</summary>")
+              out.append("")
+              out.append("```")
+              out.append(m["version_line"])
+              out.append("configuration: " + m["configure"])
+              out.append("```")
+              out.append("")
+              out.append(f"ffmpeg sha256 `{m['ffmpeg_sha256']}`, ffprobe sha256 `{m['ffprobe_sha256']}`.")
+              out.append(f"Source `{m['source_name']}` from <{m['source_url']}>, sha256 `{m['source_sha256']}`.")
+              if os.path.exists(f"artifacts/{m['source_name']}.asc"):
+                  out.append(f"Upstream's detached signature `{m['source_name']}.asc` is attached too.")
+              out.append("")
+              out.append("</details>")
+              out.append("")
+          out.append("### Source code, and where our position is imperfect")
+          out.append("")
+          out.append("`WRITTEN-OFFER.txt` (attached) is our written offer under GPL-2.0 section 3(b) /")
+          out.append("GPL-3.0 section 6(b), valid for at least three years.")
+          out.append("Plainly: **we did not compile these binaries.** They are community builds")
+          out.append("(osxexperts.net for Apple Silicon, evermeet.cx for Intel). What is attached is the")
+          out.append("*upstream* FFmpeg source for exactly the version each binary reports, plus that")
+          out.append("publisher's complete `configure` line. If a publisher patched their tree on top of")
+          out.append("upstream, we do not hold those patches and do not claim bit-for-bit reproducibility.")
+          out.append("If you find a discrepancy, open an issue - that is a compliance bug and we will fix it")
+          out.append("by building FFmpeg ourselves rather than leaving it standing.")
+          out.append("")
+          out.append("Flint's own code is proprietary, with all rights reserved. It runs FFmpeg as a separate process and")
+          out.append("never links it, so the GPL covers the bundled binaries, not the app around them.")
+          out.append("")
+          print("\n".join(out))
+          PY
+
+          cat >> "$notes" <<'GATEKEEPER'
+          ## First launch: macOS will refuse, once
+
+          This app is **not code-signed and not notarized** (that needs a paid Apple Developer
+          account, which this project does not have). macOS therefore blocks the first launch.
+
+          1. Open the `.dmg` and drag **Flint** into your **Applications** folder.
+          2. Double-click it. The message appears - click **Done**. *Do not* click **Move to Trash**.
+          3. Open **System Settings > Privacy & Security**, scroll to **Security**, and click
+             **Open Anyway**, then confirm with Touch ID or your password.
+          4. One more dialog appears - click **Open Anyway**. From then on the app opens normally.
+
+          Or from Terminal:
+
+          ```sh
+          xattr -dr com.apple.quarantine "/Applications/Flint.app"
+          ```
+
+          ## Verify your download
+
+          `SHA256SUMS.txt` is attached and covers every asset in this release:
+
+          ```sh
+          shasum -a 256 -c SHA256SUMS.txt --ignore-missing
+          ```
+
+          ## Build it yourself instead
+
+          Clone the repository and double-click `Build.command`. FFmpeg is downloaded by
+          `scripts/fetch-sidecars.sh` on first build; a locally built app is not quarantined.
+          GATEKEEPER
+
+          echo "::group::release notes"; cat "$notes"; echo "::endgroup::"
+
+      - name: Publish verified packages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # The tag commit, not GITHUB_SHA: an annotated tag push reports the tag object's sha.
+          export GITHUB_SHA="${{ needs.meta.outputs.ref }}"
+          python3 .github/scripts/release.py artifacts \
+            --version "${{ needs.meta.outputs.version }}" --notes notes.md
