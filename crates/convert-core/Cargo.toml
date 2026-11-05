@@ -1,0 +1,27 @@
+[package]
+name = "convert-core"
+description = "Platform independent conversion catalog, planner and job engine for Flint"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+same-file = "1"
+url = "2"
+dunce = "1"
+lopdf = { version = "0.36", default-features = false }
+tempfile = "3"
+midly = { version = "0.5.3", default-features = false, features = ["std", "strict"] }
+
+[target.'cfg(windows)'.dependencies]
+dirs = "6"
+
+[[bin]]
+name = "format-report"
+path = "src/bin/format_report.rs"

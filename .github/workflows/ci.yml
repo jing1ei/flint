@@ -1,0 +1,148 @@
+name: CI
+
+# The test gates for every change. release.yml calls this file verbatim, so a release can never
+# run weaker checks than a pull request. Linux jobs need no sidecars; the macOS shell job builds
+# the Tauri crate and needs dist/ plus the ffmpeg/ffprobe binaries it declares as externalBin.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Optional commit/tag to check out (manual runs)"
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      ref:
+        description: "Commit/tag to check out (defaults to the triggering ref)"
+        required: false
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+  NODE_VERSION: '22'
+
+jobs:
+  # convert-core is platform-free and dependency-light: this is the fast job that runs first.
+  core:
+    name: core crate (fmt, clippy, tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || '' }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy -p convert-core --all-targets --locked -- -D warnings
+      - run: cargo test -p convert-core --locked
+      - run: cargo run -q -p convert-core --bin format-report FORMATS.md
+      - name: FORMATS.md is up to date
+        run: git diff --exit-code -- FORMATS.md
+
+  frontend:
+    name: frontend (tsc, build, tests, generated catalog)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || '' }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm test
+      - run: npm run build
+      - run: npm run gen:catalog
+      - name: src/lib/mock-catalog.ts is up to date
+        run: git diff --exit-code -- src/lib/mock-catalog.ts
+
+  ui:
+    name: UI behaviour (mock backend) and dead-CSS probe
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || '' }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: npm ci
+      - run: pip install playwright && python -m playwright install --with-deps chromium webkit
+      - name: Start the dev server (mock backend, no Rust, no FFmpeg)
+        run: |
+          nohup npm run dev > /tmp/vite-dev.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:1420/ > /dev/null && exit 0
+            sleep 1
+          done
+          echo "dev server did not come up on 127.0.0.1:1420" >&2
+          cat /tmp/vite-dev.log >&2
+          exit 1
+      - run: python3 scripts/test_release_version.py
+      - run: python3 .github/scripts/test_release.py
+      - run: python3 scripts/ui_behaviour.py
+      - run: python3 scripts/ui_skin.py
+      - run: python3 scripts/ui_crop.py
+      - run: python3 scripts/ui_crop.py --browser webkit
+      - run: python3 scripts/ui_music.py
+      - run: python3 scripts/ui_midi.py
+      - run: python3 scripts/ui_theme.py
+      - run: python3 scripts/ui_experience.py
+      - run: python3 scripts/ui_experience.py --browser webkit
+      - run: python3 scripts/ui_legacy.py
+      - run: python3 scripts/test_macos_compat.py
+      - run: python3 scripts/deadcss.py
+
+  # Full workspace on real macOS: the integration tests use Tauri's mock runtime, but the crate
+  # has to compile against the real Tauri and the sidecars externalBin declares.
+  shell:
+    name: Tauri shell (workspace clippy and tests)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || '' }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: python3 scripts/test_sidecar_download.py
+      - run: ./scripts/fetch-sidecars.sh
+      - run: ./scripts/fetch-sidecars.sh --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install playwright && python -m playwright install webkit
+      - name: Crop flow in macOS WebKit
+        run: |
+          npm run dev > /tmp/vite-webkit.log 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:1420/ > /dev/null; then
+              python3 scripts/ui_crop.py --browser webkit
+              exit $?
+            fi
+            sleep 1
+          done
+          cat /tmp/vite-webkit.log >&2
+          exit 1
