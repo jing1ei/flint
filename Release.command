@@ -126,7 +126,7 @@ printf '\n    Files changed:\n'
 git diff --stat -- "${FILES[@]}" | sed 's/^/      /'
 printf '\n    Then it commits, tags and pushes. The Release workflow runs the full test suite, builds\n'
 printf '    both Mac architectures and Windows, and publishes only if all checks pass.\n\n'
-warn "the app is unsigned/notarized; the release notes explain the Gatekeeper step."
+warn "the app is ad-hoc signed and not notarized; the release notes explain the Gatekeeper step."
 [ "$DRY_RUN" = "1" ] && warn "RELEASE_DRY_RUN=1: nothing will be committed, tagged or pushed."
 printf '%sType yes to go ahead, anything else stops:%s ' "$BOLD" "$OFF"; read -r answer || answer=""
 [ "$answer" = "yes" ] || { for rel in $(cat "$BACKUP_DIR/manifest"); do cp "$BACKUP_DIR/$(printf '%s' "$rel" | tr / _)" "$rel"; done; good "stopped; files restored"; pause; exit 0; }

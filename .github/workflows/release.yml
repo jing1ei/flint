@@ -386,6 +386,8 @@ jobs:
       - run: cargo test --workspace --locked
 
       - name: Build the .app and .dmg
+        env:
+          APPLE_SIGNING_IDENTITY: "-"
         run: |
           set -uo pipefail
           mkdir -p "$RUNNER_TEMP/logs"
@@ -475,6 +477,21 @@ jobs:
           ( cd "$out" && shasum -a 256 "$base.dmg" "$base.app.zip" > "$base.sha256" )
           ls -lh "$out"
           cat "$out/$base.sha256"
+
+      - name: Verify code signatures in the DMG and ZIP
+        env:
+          ARCH_LABEL: ${{ matrix.arch_label }}
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          base="$RUNNER_TEMP/artifacts/Flint-$VERSION-macOS-$ARCH_LABEL"
+          verify=$(mktemp -d "$RUNNER_TEMP/verify-bundle.XXXXXX")
+          mkdir "$verify/dmg"
+          hdiutil attach -readonly -nobrowse -mountpoint "$verify/dmg" "$base.dmg"
+          trap 'hdiutil detach "$verify/dmg"' EXIT
+          codesign --verify --deep --strict --verbose=2 "$verify/dmg/Flint.app"
+          ditto -x -k "$base.app.zip" "$verify/zip"
+          codesign --verify --deep --strict --verbose=2 "$verify/zip/Flint.app"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -657,13 +674,13 @@ jobs:
           PY
 
           cat >> "$notes" <<'GATEKEEPER'
-          ## First launch: macOS will refuse, once
+          ## First launch on macOS
 
-          This app is **not code-signed and not notarized** (that needs a paid Apple Developer
-          account, which this project does not have). macOS therefore blocks the first launch.
+          Flint uses an ad-hoc signature and has not been notarized by Apple.
+          Gatekeeper may require you to approve the first launch.
 
           1. Open the `.dmg` and drag **Flint** into your **Applications** folder.
-          2. Double-click it. The message appears - click **Done**. *Do not* click **Move to Trash**.
+          2. Double-click it. If macOS shows an unidentified-developer warning, click **Done**.
           3. Open **System Settings > Privacy & Security**, scroll to **Security**, and click
              **Open Anyway**, then confirm with Touch ID or your password.
           4. One more dialog appears - click **Open Anyway**. From then on the app opens normally.
