@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "What the Flint webview is allowed to call, enumerated rather than inherited: subscribe to this app's three event streams (batch://event, install://event, menu://action, plus the webview's own drag & drop), drag the window by its custom title bar and zoom it by double-clicking that bar, and open the native file picker. Everything else the UI does goes through this app's own Rust commands, which validate their arguments - opening and revealing a file, and installing an optional helper (a tool id mapped to a fixed, hardcoded argv; the webview never names a program or an argument). Tauri's `core:default` set is deliberately NOT used: it also grants menu creation (a webview could replace this app's native menu bar with set-as-app-menu), tray icons, image reading from an arbitrary path, and path resolution that hands the webview the user's home directory. None of that is used by the UI, so none of it is granted. No process, shell or filesystem plugin is granted either, so a compromised webview cannot execute a command or read a file the UI was never given.",
+  "windows": ["main"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize",
+    "dialog:allow-open"
+  ]
+}
