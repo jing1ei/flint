@@ -145,11 +145,11 @@ def publish(directory, version, sha, repo, notes):
         raise ValueError(f'Multiple draft releases use {tag}; delete the extras and re-run')
     prerelease = '-' in version
     metadata = dict(name=f'{PROJECT} {version}', body=notes + f'\n\nBuilt from `{sha}`.\n',
-                    draft=True, prerelease=prerelease)
+                    draft=True, prerelease=prerelease, tag_name=tag, target_commitish=sha)
     if releases:
         release = api(prefix + f"/releases/{releases[0]['id']}", 'PATCH', metadata)
     else:
-        release = api(prefix + '/releases', 'POST', dict(metadata, tag_name=tag))
+        release = api(prefix + '/releases', 'POST', metadata)
     gh('release', 'upload', tag, '--repo', repo, '--clobber',
        *(str(directory / name) for name in sorted(expected)))
     # Verify what GitHub stored, including assets resumed from an earlier attempt.

@@ -118,6 +118,8 @@ class ReleaseTests(unittest.TestCase):
         self.publish()
         self.assertFalse(any(m == 'POST' and e.endswith('/releases') for m, e, _ in self.calls))
         self.assertTrue(self.published())
+        draft = next(p for m, e, p in self.calls if m == 'PATCH' and '/releases/' in e)
+        self.assertEqual(draft['tag_name'], TAG)
 
     def test_published_release_is_never_modified(self):
         self.releases = [{'id': 7, 'tag_name': TAG, 'draft': False}]
