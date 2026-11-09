@@ -1,3 +1,5 @@
+> The current public package formats and names are defined in [Package contract](../.github/PACKAGING.md).
+
 # Release Flint
 
 Publish each release under a new version tag. See [compatibility](COMPATIBILITY.md)
@@ -25,7 +27,7 @@ A tag push starts the **Release** workflow. It runs the complete CI suite from
 `.github/workflows/ci.yml` on the tagged commit, builds Intel and Apple Silicon packages
 natively, calls the **Windows PC build** workflow, and only then publishes:
 
-- both `.dmg` files and both `.app.zip` files;
+- both native `.dmg` files;
 - the Windows x64 NSIS installer;
 - the per-architecture `FFMPEG-BUILD.txt` records, the applicable GPL texts and `WRITTEN-OFFER.txt`;
 - the matching upstream FFmpeg source archive per platform;

@@ -299,7 +299,7 @@ jobs:
           Nothing in this file is typed by hand; it is what the binary reported about itself.
 
           Build          : $ARCH_NAME ($TRIPLE)
-          Artifact       : Flint-*-macOS-$ARCH_LABEL.dmg / .app.zip
+          Artifact       : Flint-*-macOS-$ARCH_LABEL.dmg
           Release        : $release_url
 
           FFmpeg version : $FFVER
@@ -467,18 +467,17 @@ jobs:
 
           app="target/release/bundle/macos/Flint.app"
           [ -d "$app" ] || { echo "::error::no .app at $app"; exit 1; }
-          ditto -c -k --keepParent "$app" "$out/$base.app.zip"
 
           cp src-tauri/licenses/FFMPEG-BUILD.txt "$out/$base-FFMPEG-BUILD.txt"
           cp "$SRC_PATH" "$out/"
           [ -f "$SRC_PATH.asc" ] && cp "$SRC_PATH.asc" "$out/"
           cp "$RUNNER_TEMP/ffmpeg-meta.json" "$out/$ARCH_LABEL.ffmpeg-meta.json"
 
-          ( cd "$out" && shasum -a 256 "$base.dmg" "$base.app.zip" > "$base.sha256" )
+          ( cd "$out" && shasum -a 256 "$base.dmg" > "$base.sha256" )
           ls -lh "$out"
           cat "$out/$base.sha256"
 
-      - name: Verify code signatures in the DMG and ZIP
+      - name: Verify code signatures in the DMG
         env:
           ARCH_LABEL: ${{ matrix.arch_label }}
           VERSION: ${{ needs.meta.outputs.version }}
@@ -490,8 +489,6 @@ jobs:
           hdiutil attach -readonly -nobrowse -mountpoint "$verify/dmg" "$base.dmg"
           trap 'hdiutil detach "$verify/dmg"' EXIT
           codesign --verify --deep --strict --verbose=2 "$verify/dmg/Flint.app"
-          ditto -x -k "$base.app.zip" "$verify/zip"
-          codesign --verify --deep --strict --verbose=2 "$verify/zip/Flint.app"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -592,7 +589,7 @@ jobs:
           | Apple Silicon, macOS 12+ | \`...-macOS-arm64.dmg\` |
           | Intel, macOS 11+ | \`...-macOS-x64.dmg\` |
 
-          Choose the native build for your Mac. The \`.app.zip\` files are the same app without the disk image.
+          Choose the native DMG for your Mac.
 
           Windows x64: download \`Flint-${version}-Windows-x64.exe\`.
           There is no Linux installer.
@@ -614,7 +611,7 @@ jobs:
           out.append("| --- | --- | --- | --- | --- |")
           for m in metas:
               out.append(
-                  f"| `...-macOS-{m['arch_label']}.dmg` / `.app.zip` "
+                  f"| `...-macOS-{m['arch_label']}.dmg` "
                   f"| `{m['ffmpeg_version']}` "
                   f"| **{m['licence']}** "
                   f"| `{m['licence_file']}` "

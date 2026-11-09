@@ -385,7 +385,7 @@ dependencies = [
 
 [[package]]
 name = "convert-core"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "anyhow",
  "dirs 6.0.0",
@@ -886,7 +886,7 @@ dependencies = [
 
 [[package]]
 name = "flint"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "convert-core",
  "dunce",

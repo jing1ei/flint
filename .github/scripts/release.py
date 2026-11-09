@@ -40,9 +40,7 @@ def required_assets(version):
     base = f'{PROJECT}-{version}'
     return [
         f'{base}-macOS-arm64.dmg',
-        f'{base}-macOS-arm64.app.zip',
         f'{base}-macOS-x64.dmg',
-        f'{base}-macOS-x64.app.zip',
         f'{base}-Windows-x64.exe',
     ]
 

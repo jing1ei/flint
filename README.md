@@ -9,6 +9,20 @@ Light pink-blue surfaces, subtle glass, and a built-in MIDI piano renderer.
 
 ![Flint](docs/screenshots/hero.png)
 
+## Download packages
+
+Choose the package for your computer from [GitHub Releases](https://github.com/jing1ei/flint/releases/latest).
+
+| Computer | Package |
+| --- | --- |
+| Mac with Apple silicon | `Flint-1.0.3-macOS-arm64.dmg` |
+| Mac with Intel | `Flint-1.0.3-macOS-x64.dmg` |
+| Windows x64 | `Flint-1.0.3-Windows-x64.exe` |
+
+On macOS, open the DMG and drag the app to Applications. On Windows, run the EXE installer.
+Each release includes one source ZIP and `SHA256SUMS.txt`.
+Flint also includes the licence evidence and corresponding FFmpeg source for its bundled binaries.
+
 ## Use
 
 1. Drop files or folders, or click **Add files**.
